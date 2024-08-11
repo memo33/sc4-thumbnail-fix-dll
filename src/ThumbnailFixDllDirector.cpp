@@ -22,7 +22,6 @@ static constexpr uint32_t kThumbnailFixDllDirectorID = 0xD25A91D5;
 
 static constexpr std::string_view PluginLogFileName = "memo.thumbnail-fix.log";
 
-
 // static constexpr uint32_t SC4WriteCityRegionViewThumbnail_InjectPoint = 0x5de2db;
 // static constexpr uint32_t SC4WriteCityRegionViewThumbnail_ContinueJump = 0x5de2e0;
 static constexpr uint32_t ComputeDrawRectsForDrawFrustum_InjectPoint = 0x752f43;
@@ -49,14 +48,6 @@ namespace
 		*((uint32_t*)(address+1)) = ((uint32_t)pfnFunc) - address - 5;
 	}
 
-	void UninstallHook(uint32_t address, uint8_t uFirstByte, uint32_t uOtherBytes)
-	{
-		DWORD oldProtect;
-		THROW_IF_WIN32_BOOL_FALSE(VirtualProtect((void *)address, 5, PAGE_EXECUTE_READWRITE, &oldProtect));
-		*((uint8_t*)address) = uFirstByte;
-		*((uint32_t*)(address+1)) = uOtherBytes;
-	}
-
 	void InstallCallHook(uint32_t address, void (*pfnFunc)(void))
 	{
 		DWORD oldProtect;
@@ -65,14 +56,20 @@ namespace
 		*((uint32_t*)(address+1)) = ((uint32_t)pfnFunc) - address - 5;
 	}
 
+	bool activelyWritingThumbnail = false;
+
 	void NAKED_FUN Hook_ComputeDrawRectsForDrawFrustum(void)
 	{
-		// Overwrite number of rows to draw by maximum.
-		// (this is subsequently lowered for small/medium city tiles, so there's no problem in setting this to 257, the value for large city tiles)
 		__asm {
-			mov dword ptr [edi + 0x90], ROWS_VERTEX_COUNT_MAX;
+			mov dl, byte ptr [activelyWritingThumbnail];
+			test dl, dl;
+			jz skipOverwrite;
+			// Overwrite number of rows to draw by maximum when writing thumbnail.
+			// (this is subsequently lowered for small/medium city tiles, so there's no problem in setting this to 257, the value for large city tiles)
 			mov eax, ROWS_VERTEX_COUNT_MAX;
-			push ComputeDrawRectsForDrawFrustum_ContinueJump;
+skipOverwrite:
+			mov dword ptr [edi + 0x90], eax;
+			push ComputeDrawRectsForDrawFrustum_ContinueJump;  // edx/dl is reassigned directly after
 			ret;
 		}
 	}
@@ -83,23 +80,10 @@ namespace
 
 	uint32_t SC4WriteCityRegionViewThumbnail_wrapper(cIGZPersistDBSegment* persistDbSegment)
 	{
-		// The actual patch is only applied for the duration of creating the thumbnail to avoid a performance impact during normal gameplay.
-		Logger& logger = Logger::GetInstance();
-		try {
-			InstallHook(ComputeDrawRectsForDrawFrustum_InjectPoint, Hook_ComputeDrawRectsForDrawFrustum);
-			logger.WriteLine(LogLevel::Info, "Installed temporary patch for rendering thumbnail.");
-		} catch (const wil::ResultException& e) {
-			logger.WriteLineFormatted(LogLevel::Error, "Failed to install temporary patch for rendering thumbnail.\n%s", e.what());
-		}
-
+		// The actual patch is only active for the duration of creating the thumbnail to avoid a performance impact during normal gameplay.
+		activelyWritingThumbnail = true;
 		auto result = SC4WriteCityRegionViewThumbnail_orig(persistDbSegment);
-
-		try {
-			UninstallHook(ComputeDrawRectsForDrawFrustum_InjectPoint, 0x89, 0x00009087);
-			logger.WriteLine(LogLevel::Info, "Uninstalled temporary patch for rendering thumbnail.");
-		} catch (const wil::ResultException& e) {
-			logger.WriteLineFormatted(LogLevel::Error, "Failed to uninstall temporary patch for rendering thumbnail.\n%s", e.what());
-		}
+		activelyWritingThumbnail = false;
 		return result;
 	}
 
@@ -119,6 +103,7 @@ namespace
 		try
 		{
 			// InstallHook(SC4WriteCityRegionViewThumbnail_InjectPoint, Hook_SC4WriteCityRegionViewThumbnail);  // overwrite magnification for testing on smaller screens
+			InstallHook(ComputeDrawRectsForDrawFrustum_InjectPoint, Hook_ComputeDrawRectsForDrawFrustum);
 			InstallCallHook(WriteRegionViewThumbnail_InjectPoint, reinterpret_cast<void(*)(void)>(SC4WriteCityRegionViewThumbnail_wrapper));
 			logger.WriteLine(LogLevel::Info, "Installed Region View Thumbnail Fix.");
 		}
