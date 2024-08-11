@@ -23,12 +23,10 @@ static constexpr uint32_t kThumbnailFixDllDirectorID = 0xD25A91D5;
 static constexpr std::string_view PluginLogFileName = "memo.thumbnail-fix.log";
 
 
-static constexpr uint32_t SC4WriteCityRegionViewThumbnail_InjectPoint = 0x5de2db;
-static constexpr uint32_t SC4WriteCityRegionViewThumbnail_ContinueJump = 0x5de2e0;
-
+// static constexpr uint32_t SC4WriteCityRegionViewThumbnail_InjectPoint = 0x5de2db;
+// static constexpr uint32_t SC4WriteCityRegionViewThumbnail_ContinueJump = 0x5de2e0;
 static constexpr uint32_t ComputeDrawRectsForDrawFrustum_InjectPoint = 0x752f43;
 static constexpr uint32_t ComputeDrawRectsForDrawFrustum_ContinueJump = 0x752f49;
-
 static constexpr uint32_t WriteRegionViewThumbnail_InjectPoint = 0x459d4e;
 
 
@@ -105,22 +103,22 @@ namespace
 		return result;
 	}
 
-	void NAKED_FUN Hook_SC4WriteCityRegionViewThumbnail(void)
-	{
-		// overwrite magnification for testing on smaller screens (<=1024 vertical resolution)
-		__asm {
-			push 0x3e000000;  // 0.125
-			push SC4WriteCityRegionViewThumbnail_ContinueJump;
-			ret;
-		}
-	}
+	// void NAKED_FUN Hook_SC4WriteCityRegionViewThumbnail(void)
+	// {
+	// 	// overwrite magnification for testing on smaller screens (<=1024 vertical resolution)
+	// 	__asm {
+	// 		push 0x3e000000;  // 0.125
+	// 		push SC4WriteCityRegionViewThumbnail_ContinueJump;
+	// 		ret;
+	// 	}
+	// }
 
 	void InstallPatches()
 	{
 		Logger& logger = Logger::GetInstance();
 		try
 		{
-			InstallHook(SC4WriteCityRegionViewThumbnail_InjectPoint, Hook_SC4WriteCityRegionViewThumbnail);  // overwrite magnification for testing on smaller screens
+			// InstallHook(SC4WriteCityRegionViewThumbnail_InjectPoint, Hook_SC4WriteCityRegionViewThumbnail);  // overwrite magnification for testing on smaller screens
 			InstallCallHook(WriteRegionViewThumbnail_InjectPoint, reinterpret_cast<void(*)(void)>(SC4WriteCityRegionViewThumbnail_wrapper));
 			logger.WriteLine(LogLevel::Info, "Installed Region View Thumbnail Fix.");
 		}
