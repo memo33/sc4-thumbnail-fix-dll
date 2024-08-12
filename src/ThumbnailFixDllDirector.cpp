@@ -6,7 +6,6 @@
 #include <Windows.h>
 #include "wil/resource.h"
 #include "wil/win32_helpers.h"
-#include "cISC4City.h"
 
 
 #ifdef __clang__
@@ -31,7 +30,10 @@ static constexpr uint32_t SC4WriteCityRegionViewThumbnail_ContinueJump = 0x5de2e
 static constexpr uint32_t ComputeDrawRectsForDrawFrustum_InjectPoint = 0x752f43;
 static constexpr uint32_t ComputeDrawRectsForDrawFrustum_ContinueJump = 0x752f49;
 static constexpr uint32_t WriteRegionViewThumbnail_InjectPoint = 0x459d4e;
+static constexpr uint32_t WriteRegionViewThumbnail_ContinueJump = 0x459d53;
+static constexpr uint32_t SC4WriteCityRegionViewThumbnail_address = 0x5ddec0;
 
+static bool activelyWritingThumbnail = false;
 
 namespace
 {
@@ -52,16 +54,6 @@ namespace
 		*((uint32_t*)(address+1)) = ((uint32_t)pfnFunc) - address - 5;
 	}
 
-	void InstallCallHook(uint32_t address, void (*pfnFunc)(void))
-	{
-		DWORD oldProtect;
-		THROW_IF_WIN32_BOOL_FALSE(VirtualProtect((void *)address, 5, PAGE_EXECUTE_READWRITE, &oldProtect));
-		*((uint8_t*)address) = 0xE8;
-		*((uint32_t*)(address+1)) = ((uint32_t)pfnFunc) - address - 5;
-	}
-
-	bool activelyWritingThumbnail = false;
-
 	void NAKED_FUN Hook_ComputeDrawRectsForDrawFrustum(void)
 	{
 		__asm {
@@ -78,17 +70,15 @@ skipOverwrite:
 		}
 	}
 
-	typedef uint32_t(* pfn_SC4WriteCityRegionViewThumbnail)(cIGZPersistDBSegment* persistDbSegment);
-
-	pfn_SC4WriteCityRegionViewThumbnail SC4WriteCityRegionViewThumbnail_orig = reinterpret_cast<pfn_SC4WriteCityRegionViewThumbnail>(0x5ddec0);
-
-	uint32_t SC4WriteCityRegionViewThumbnail_wrapper(cIGZPersistDBSegment* persistDbSegment)
+	void NAKED_FUN Hook_WriteRegionViewThumbnail(void)
 	{
-		// The actual patch is only active for the duration of creating the thumbnail to avoid a performance impact during normal gameplay.
-		activelyWritingThumbnail = true;
-		auto result = SC4WriteCityRegionViewThumbnail_orig(persistDbSegment);
-		activelyWritingThumbnail = false;
-		return result;
+		__asm {
+			mov byte ptr [activelyWritingThumbnail], 1;
+			call dword ptr [SC4WriteCityRegionViewThumbnail_address];
+			mov byte ptr [activelyWritingThumbnail], 0;
+			push WriteRegionViewThumbnail_ContinueJump;
+			ret;
+		}
 	}
 
 #ifdef DEBUG_SMALL_SCREEN
@@ -112,7 +102,7 @@ skipOverwrite:
 			InstallHook(SC4WriteCityRegionViewThumbnail_InjectPoint, Hook_SC4WriteCityRegionViewThumbnail);  // overwrite magnification for testing on smaller screens
 #endif
 			InstallHook(ComputeDrawRectsForDrawFrustum_InjectPoint, Hook_ComputeDrawRectsForDrawFrustum);
-			InstallCallHook(WriteRegionViewThumbnail_InjectPoint, reinterpret_cast<void(*)(void)>(SC4WriteCityRegionViewThumbnail_wrapper));
+			InstallHook(WriteRegionViewThumbnail_InjectPoint, Hook_WriteRegionViewThumbnail);
 			logger.WriteLine(LogLevel::Info, "Installed Region View Thumbnail Fix.");
 		}
 		catch (const wil::ResultException& e)
