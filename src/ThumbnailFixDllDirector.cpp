@@ -15,6 +15,8 @@
 #define NAKED_FUN __declspec(naked)
 #endif
 
+// uncomment for testing on smaller screen sizes
+// #define DEBUG_SMALL_SCREEN
 
 #define ROWS_VERTEX_COUNT_MAX 257
 
@@ -22,8 +24,10 @@ static constexpr uint32_t kThumbnailFixDllDirectorID = 0xD25A91D5;
 
 static constexpr std::string_view PluginLogFileName = "memo.thumbnail-fix.log";
 
-// static constexpr uint32_t SC4WriteCityRegionViewThumbnail_InjectPoint = 0x5de2db;
-// static constexpr uint32_t SC4WriteCityRegionViewThumbnail_ContinueJump = 0x5de2e0;
+#ifdef DEBUG_SMALL_SCREEN
+static constexpr uint32_t SC4WriteCityRegionViewThumbnail_InjectPoint = 0x5de2db;
+static constexpr uint32_t SC4WriteCityRegionViewThumbnail_ContinueJump = 0x5de2e0;
+#endif
 static constexpr uint32_t ComputeDrawRectsForDrawFrustum_InjectPoint = 0x752f43;
 static constexpr uint32_t ComputeDrawRectsForDrawFrustum_ContinueJump = 0x752f49;
 static constexpr uint32_t WriteRegionViewThumbnail_InjectPoint = 0x459d4e;
@@ -87,22 +91,26 @@ skipOverwrite:
 		return result;
 	}
 
-	// void NAKED_FUN Hook_SC4WriteCityRegionViewThumbnail(void)
-	// {
-	// 	// overwrite magnification for testing on smaller screens (<=1024 vertical resolution)
-	// 	__asm {
-	// 		push 0x3e000000;  // 0.125
-	// 		push SC4WriteCityRegionViewThumbnail_ContinueJump;
-	// 		ret;
-	// 	}
-	// }
+#ifdef DEBUG_SMALL_SCREEN
+	void NAKED_FUN Hook_SC4WriteCityRegionViewThumbnail(void)
+	{
+		// overwrite magnification for testing on smaller screens (<=1024 vertical resolution)
+		__asm {
+			push 0x3e000000;  // 0.125
+			push SC4WriteCityRegionViewThumbnail_ContinueJump;
+			ret;
+		}
+	}
+#endif
 
 	void InstallPatches()
 	{
 		Logger& logger = Logger::GetInstance();
 		try
 		{
-			// InstallHook(SC4WriteCityRegionViewThumbnail_InjectPoint, Hook_SC4WriteCityRegionViewThumbnail);  // overwrite magnification for testing on smaller screens
+#ifdef DEBUG_SMALL_SCREEN
+			InstallHook(SC4WriteCityRegionViewThumbnail_InjectPoint, Hook_SC4WriteCityRegionViewThumbnail);  // overwrite magnification for testing on smaller screens
+#endif
 			InstallHook(ComputeDrawRectsForDrawFrustum_InjectPoint, Hook_ComputeDrawRectsForDrawFrustum);
 			InstallCallHook(WriteRegionViewThumbnail_InjectPoint, reinterpret_cast<void(*)(void)>(SC4WriteCityRegionViewThumbnail_wrapper));
 			logger.WriteLine(LogLevel::Info, "Installed Region View Thumbnail Fix.");
